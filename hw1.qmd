@@ -1,0 +1,412 @@
+---
+title: "HOMEWORK 1"
+date: "2025/03/22"
+author: "Luisa Porzio (ID: 255069)"
+format: 
+    pdf:
+      theme: cosmo
+      latex_engine: xelatex
+      number-sections: true
+      
+editor: visual
+---
+
+# **Introduction**
+
+The data here analyzed originate from a cardiovascular study conducted in the US, investigating the possible risk factors associated to the development of coronary heart disease (CHD) in a 10 years range.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE,
+message=FALSE,
+tidy.opts=list(width.cutoff = 50),
+tidy = TRUE)
+```
+
+# Exploratory Analysis
+
+The first step of the analysis is conducting a data pre-processing to check the structure of the data-set and the possible presence of missing values.
+
+```{r, include=FALSE}
+#Import the necessary libraries
+library(tidyverse)
+library(ISLR2)
+library(caret)
+library(tidymodels)
+library(kableExtra)
+library(pROC)
+library(class)
+library(ROCR)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+library(gridExtra)
+library(ggthemes)
+```
+
+```{r, include=FALSE}
+data <- read_csv("chd.csv")
+str(data)
+```
+
+```{r, include=TRUE}
+data <- na.omit(data)
+```
+
+In addition, in order to proceed it is necessary to transform the nature of some variables from `characters` or `numeric` into `factors`.
+
+```{r, include=TRUE}
+data <- data %>%
+  mutate(CHD = as.factor(CHD),
+         sex = as.factor(sex),
+         education = factor(education,levels = c(1,2,3,4), 
+                            labels = c("no-high-school","high-school-grad",
+                                       "college-grad","post-college")),
+         smoker = factor(smoker, levels = c(0,1), 
+                         labels = c("smoker", "not-smoker")),
+         stroke = factor(stroke, levels = c(0,1), labels = c("No", "Yes")),
+         HTN = factor(HTN, levels = c(0,1), labels = c("No", "Yes")),
+         diabetes = factor(diabetes, levels = c(0,1), 
+                           labels = c("No", "Yes")))
+```
+
+## Continuous Variables Analysis
+
+The discriminative power of each predictor was then analyzed with the following density plots, showing that the most impacting predictors are Age, which has a lower mean in the group with No CHD compared then in the group with CHD, and DBP, which is slightly lower in the group without CHD compared to the group with CHD.
+
+```{r, include=FALSE, fig.width=8, fig.height=6}
+par(mfrow = c(2,3))
+for (var in names(data)){
+  cond <- is.numeric(data[[var]])
+  
+  if (cond) {
+    fmla <- as.formula(paste(var, "~ CHD"))
+    boxplot(fmla, data = data, col="orange")
+  }
+}
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=6, fig.cap="Distribution of Continuos Variables split by CHD"}
+theme_set(theme_classic())
+p1 <- ggplot(data, aes(x = age, fill = CHD)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plots of Numeric Variables by CHD Status",
+       y = "Density") +
+  scale_fill_manual(values = c("#D81B60","#1E88E5"), name = "CHD") +
+  theme(plot.title = element_blank(),
+        legend.position = 'top')
+
+p2 <- ggplot(data, aes(x = cpd, fill = CHD)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plots of Numeric Variables by CHD Status",
+       y = "Density") +
+  scale_fill_manual(values = c("#D81B60", "#1E88E5"), name = "CHD")+
+  theme(plot.title = element_blank(),
+        legend.position = 'top')
+
+p3 <- ggplot(data, aes(x = chol, fill = CHD)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plots of Numeric Variables by CHD Status",
+       y = "Density") +
+  scale_fill_manual(values = c("#D81B60","#1E88E5"), name = "CHD") +
+  theme(plot.title = element_blank(),
+        legend.position = 'top')
+
+p4 <- ggplot(data, aes(x = DBP, fill = CHD)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plots of Numeric Variables by CHD Status",
+       y = "Density") +
+  scale_fill_manual(values = c("#D81B60","#1E88E5"), name = "CHD") +
+  theme(plot.title = element_blank(),
+        legend.position = 'top')
+
+p5 <- ggplot(data, aes(x = BMI, fill = CHD)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plots of Numeric Variables by CHD Status",
+       y = "Density") +
+  scale_fill_manual(values = c("#D81B60","#1E88E5"), name = "CHD") +
+  theme(plot.title = element_blank(),
+        legend.position = 'top')
+
+p6 <- ggplot(data, aes(x = HR, fill = CHD)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plots of Numeric Variables by CHD Status",
+       y = "Density") +
+  scale_fill_manual(values = c("#D81B60","#1E88E5"), name = "CHD") +
+  theme(plot.title = element_blank(),
+        legend.position = 'top')
+
+#p1 | p2 | p3
+#p4 | p5 | p6
+
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 3)
+```
+
+## Categorical Variables Analysis
+
+The following mosaic-plots show the distributions of each variable on the base of CHD presence. For example, we can see that sex present a slight imbalance, showing more females than males in the No CHD group. However, when CHD is present we have the opposite scenario, showing more males than females. Therefore, it is possible to unserstand how impacting is sex for developing CHD or not. The same can be said about Hypertension which behaves similarly to the sex variable with respect to CHD presence. In addition, it important to underline that also the target variable is unbalanced. All the other variables do not present great imbalances.
+
+```{r, echo=FALSE, fig.width=12, fig.height=8, fig.cap="Visualization of Class Composition for Categorical Variables by CHD"}
+par(mfrow=c(2,4))
+for (var in names(data)) {
+  cond <- is.factor(data[[var]])
+  
+  if (cond & var != "CHD") {
+    table_data <- table(data$CHD, data[[var]])
+    mosaicplot(table_data, col = c("#D81B60","#1E88E5"), 
+               main = paste("Categorical Independence", " (", var, ")", sep = ""), 
+               xlab = "CHD", ylab = var)
+  }
+}
+```
+
+# Main Analysis
+
+Due to the imbalance of the classes, a train and test data split that preserves the proportion of CHD in each split was deemed more appropriate. Therefore, the function below preserves the same proportion of target labels in both subsets.
+
+```{r, include=TRUE}
+set.seed(6)
+train_idx <- createDataPartition(data$CHD, p = 0.75)
+
+train_data <- data[train_idx$Resample1, ]
+test_data <- data[-train_idx$Resample1, ]
+```
+
+```{r, include=FALSE}
+train_data %>%
+  group_by(CHD) %>%
+  summarize(el = n()/nrow(train_data))
+```
+
+```{r, include=FALSE}
+test_data %>%
+  group_by(CHD) %>%
+  summarize(el = n()/nrow(test_data))
+```
+
+## GLM model - Logistic Regression
+
+In the main analysis we are asked to fit a logistic regression model. Below is the code to replicate the model fitting.
+
+```{r}
+mod <- glm(CHD~., 
+           data = train_data, 
+           family = binomial)
+```
+
+```{r, echo = FALSE}
+sum <- tidy(mod) %>%
+   mutate(
+    highlight = ifelse(p.value < 0.05, "yes", "no")  # Identify significant rows
+  )
+
+sum %>%
+  select(-highlight) %>%
+   kable(format = "latex", booktabs = TRUE, caption = "Model Summary") %>%
+   kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 9) %>%
+  row_spec(which(sum$highlight == 'yes'), background = "pink")  # Highlight significant rows
+```
+
+In the table above we can see highlighted the coefficients which are statistically significant and that we can interpret.
+
+-   **Categorical variables** (e.g., sex, HTN, diabetes): The coefficient reflects the change in log-odds of developing CHD relative to the baseline group, assuming all other variables remain constant.
+
+-   **Numerical variables** (e.g., age, cpd, DBP): The coefficient represents the change in log-odds of developing CHD for each one-unit increase in the predictor, while holding all other variables constant.
+
+## K-NN Classifier {#sec-k-nn-classifier}
+
+This section fits a K-NN classifier by performing a selection of the parameter k ranging from 1 to 50. Before fitting the K-NN, the data was scaled by converting all the categorical variables into numeric, except for the CHD variable. The results of the K-NN fitting are displayed in the confusion matrices in @sec-k-nn-performance-evaluation as well as the process of choice of the optimal k.
+
+```{r, include=FALSE}
+#We scale the data
+
+train_scaled <- train_data %>%
+  select(-c(CHD, sex, education, smoker, stroke, HTN, diabetes)) %>%
+  scale() %>%
+  as_tibble() %>%
+  cbind(train_data[, c("CHD", "sex","education", "smoker", "stroke", "HTN", "diabetes")]) %>%
+  mutate(across(setdiff( c("CHD", "sex","education", "smoker", "stroke", "HTN", "diabetes"), 'CHD'), as.numeric))
+#converts all categorical columns into numeric values apart from the CHD variable
+
+test_scaled <- test_data %>%
+  select(- c("CHD", "sex","education", "smoker", "stroke", "HTN", "diabetes")) %>%
+  scale() %>%
+  as_tibble() %>%
+  cbind(test_data[, c("CHD", "sex","education", "smoker", "stroke", "HTN", "diabetes")]) %>%
+  mutate(across(setdiff( c("CHD", "sex","education", "smoker", "stroke", "HTN", "diabetes"), 'CHD'), as.numeric))
+```
+
+```{r, include=FALSE}
+#We split and scale the data for the KNN
+x_train <- train_scaled %>% select(-CHD) 
+x_test <- test_scaled %>% select(-CHD)
+y_train <- train_scaled$CHD
+y_test <- test_scaled$CHD
+```
+
+```{r, include=TRUE}
+set.seed(6)
+for (k in 1:50) {
+  knn.pred <- knn(x_train, x_train, y_train, k = k)
+}
+```
+
+# Performance evaluation
+
+In this section the K-NN fitting is evaluated, and then compared with the GLM method.
+
+## K-NN Performance Evaluation {#sec-k-nn-performance-evaluation}
+
+The K-NN errors plot shown below was designed in order to decide which k minimizes the error. It is possible to see how the train data has a very low error rate when k=1, while their error rate is at maximum peak when k=50. Instead, when analyzing test data, the error rate is at its highest when k=1, which excludes 1 as possible choice of k. Therefore, k=50 was chosen as it minimizes at its best the error rate on the test data.
+
+```{r, include=FALSE}
+#Error Train Data
+#We compute the error for the train data
+err_train <- ks <- c()
+set.seed(6)
+for (k in 1:50) { 
+  knn.pred <- knn(x_train, x_train, y_train, k = k) 
+  ks <- append(ks, 1/k) 
+  err <- mean(y_train != knn.pred) 
+  err_train <- append(err_train, err) 
+  }
+```
+
+```{r, include=FALSE}
+#Error Test Data
+#Now we compute the error for the test data
+err_test <- c()
+set.seed(6)
+for (k in 1:50) { 
+  knn.pred.test <- knn(x_train, x_test, y_train, k = k)
+  err.ts <- mean(y_test != knn.pred.test) 
+  err_test <- append(err_test, err.ts) 
+  }
+```
+
+```{r, echo=FALSE, fig.height=4, fig.width=6, fig.cap="Performance on Train vs Test Data"}
+plot(ks,err_train, col="#D81B60", type = "l", lwd=3, ylim = c(0, .30), 
+     ylab = "Error Rate", xlab = "1/k")
+lines(ks,err_test, col="#1E88E5", type = "l", lwd=3)
+legend("topleft", legend = c("Train", "Test"), 
+       col = c("#D81B60", "#1E88E5"), lty = 1, lwd = 2)
+```
+
+### Confusion Matrix K-NN Test Data
+
+As mentioned in @sec-k-nn-classifier, this confusion matrix shows the overall performance of the K-NN model. It is possible to observe that it never makes a positive classification making a total of 151 false negatives.
+
+```{r, echo=FALSE}
+knn_preds <- knn(x_train, x_test, y_train, k = 50)
+table(test_scaled$CHD, knn_preds)%>%
+  kable(format = "latex", booktabs = TRUE, 
+        caption = "Confusion Matrix for K-NN Model")
+```
+
+## GLM Performance Evaluation
+
+This section evaluates the Logistic Regression Model.
+
+### Confusion Matrix Logistic Regression {#sec-confusion-matrix-logistic-regression}
+
+The results displayed in the following confusion matrix provide a detailed breakdown of the model showing that due to class imbalance false negatives appear to be more frequent, meaning the model struggles to correctly predict CHD cases.
+
+```{r, echo=FALSE}
+predics <- predict(mod, newdata = test_data, type = 'response')
+classes <- ifelse(predics > .5, 'Yes', 'No')
+```
+
+```{r, echo=FALSE}
+conf_matrix <- table(test_data$CHD, classes)
+conf_matrix %>%
+  kable(format = "latex", booktabs = TRUE, 
+        caption = "Confusion Matrix for Logistic Regression") %>%
+  kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r, include=FALSE}
+#Extract Values from the matrix
+TN <- conf_matrix[1, 1]  # True Negatives
+FP <- conf_matrix[1, 2]  # False Positives
+FN <- conf_matrix[2, 1]  # False Negatives
+TP <- conf_matrix[2, 2]  # True Positives
+
+```
+
+The model provides an accuracy of 85,13% which is very high and can be misleading; indeed, due to the highly imbalanced dataset the model only learns to predict more "No CHD" cases as they are more present.
+
+```{r, echo=FALSE}
+#Accuracy
+accuracy <- round((TP + TN) / sum(conf_matrix), 2)
+
+#Precision
+precision <- round(TP / (TP + FP), 2)
+#cat(sprintf("Precision: %.4f\n", precision))
+
+#Recall
+recall <- round(TP / (TP + FN), 2)
+#cat(sprintf("Recall: %.4f\n", recall))
+
+#f1-score
+f1_score <- round(2 * (precision * recall) / (precision + recall), 2)
+#cat(sprintf("F1-Score: %.4f\n", f1_score))
+
+# Create a data frame
+metrics <- data.frame(Metric = c("Accuracy", "Precision", "Recall", "F1-Score"),
+                      Value = c(accuracy, precision, recall, f1_score))
+
+# Print as a styled table
+kable(metrics, format = "latex", booktabs = TRUE, caption = "Model's Accuracy, Precision, Recall and F1-score") %>%
+  kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+However, from the confusion matrix showed above it is possible to extract other metrics such as precision, recall, and F1-score. From this analysis it is possible to conclude that this model is not good for classification as it fails to correctly identify the majority of CHD positive cases. Possible solution to such problem will be covered in @sec-discussion-and-conclusion.
+
+### ROC Curve and AUC
+
+The ROC curve illustrates the trade-off between the *true positive rate (sensitivity)* and *false positive rate (1-specificity)* at various threshold levels. Specifically, it shows how the Logistic Regression model performs on unseen (test) data.
+
+```{r, echo=FALSE}
+proba <- predict(mod, newdata = test_data, type = "response")
+```
+
+```{r, echo=FALSE, fig.align='center', fig.cap="ROC Curve for the Logistic Regression Model"}
+# first, we need to create a "prediction" object
+predob <- ROCR::prediction(proba, test_data$CHD)
+
+# then we need a "performance" object
+perf <- ROCR::performance(predob, "tpr", "fpr")
+
+# now the plot
+plot(perf, col="#D81B60", lwd=3)
+abline(0, 1, col = "#1E88E5", lty = 2, lwd=3)
+
+```
+
+The overall AUC for the model described below has a value around 0.75, which is neither good nor bad, as it is neither closer to 1 nor closer to 0.5. Therefore, it is possible to consider this model not very strong and rather randomly guessing a response. However, as mentioned in @sec-confusion-matrix-logistic-regression, the model does not perform well at all as the few times that it correctly classifies CHD cases, they mainly fall in the "No-CHD" group.
+
+```{r, include=FALSE}
+roc_obj <- pROC::roc(test_data$CHD, proba)
+```
+
+```{r, echo=FALSE}
+# Compute and print AUC
+auc_value <- pROC::auc(roc_obj)
+print(auc_value)
+```
+
+# Discussion and Conclusion {#sec-discussion-and-conclusion}
+
+The dataset here analyzed presents several issues stemming from class imbalance, affecting both the target variable predictions and other predictors influence. Logistic Regression and K-NN were employed to classify CHD cases, with results indicating that neither model performed optimally under the given dataset conditions. Indeed, the dataset contains significantly fewer CHD cases than non-CHD cases, leading to a bias where both models (K-NN and Logistic Regression) may favor predicting the majority class (No CHD). This imbalance affects both model training and coefficient interpretation.
+
+### Possible Improvements for the K-NN Model
+
+As mentioned in @sec-confusion-matrix-logistic-regression, there are different possible solutions to this bias, such as:
+
+1.  Re-sampling techniques such as *Synthetic Minority Over-sampling* to generate more positive CHD cases
+2.  Threshold adjustment
+3.  Try different models such Gradient Boosting that could allow for more precision in capturing trends in the data. Also a Random Forest model could be implemented, even though it performs better on balanced dataset.
+
+### Possible Improvements for the Logistic Regression Model
+
+The Logistic Regression model is equally affected by the bias generated by the data. One potential improvement that was not explored for the sake of the length of this report is the use of regularization techniques such as L1 (Lasso) or L2 (Ridge) penalties. These methods could help mitigate issues related to class imbalance by adjusting the decision boundary and preventing the model from being overly influenced by the majority class.
