@@ -15,10 +15,12 @@ editor: visual
 
 The data here analyzed originate from a cardiovascular study conducted in the US, investigating the possible risk factors associated to the development of coronary heart disease (CHD) in a 10 years range.
 
+The full code to replicate the analysis is available on [GitHub](https://github.com/LuPorzio/HW1_StatMod/tree/main).
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning=FALSE,
 message=FALSE,
-tidy.opts=list(width.cutoff = 50),
+tidy.opts=list(width.cutoff = 60),
 tidy = TRUE)
 ```
 
@@ -86,7 +88,7 @@ for (var in names(data)){
 }
 ```
 
-```{r, echo=FALSE, fig.width=8, fig.height=6, fig.cap="Distribution of Continuos Variables split by CHD"}
+```{r, echo=FALSE, fig.width=7, fig.height=4, fig.cap="Distribution of Continuos Variables split by CHD"}
 theme_set(theme_classic())
 p1 <- ggplot(data, aes(x = age, fill = CHD)) +
   geom_density(alpha = 0.5) +
@@ -285,9 +287,9 @@ for (k in 1:50) {
 ```
 
 ```{r, echo=FALSE, fig.height=4, fig.width=6, fig.cap="Performance on Train vs Test Data"}
-plot(ks,err_train, col="#D81B60", type = "l", lwd=3, ylim = c(0, .30), 
+plot(ks,err_train, col="#D81B60", type = "l", lwd=2, ylim = c(0, .30), 
      ylab = "Error Rate", xlab = "1/k")
-lines(ks,err_test, col="#1E88E5", type = "l", lwd=3)
+lines(ks,err_test, col="#1E88E5", type = "l", lwd=2)
 legend("topleft", legend = c("Train", "Test"), 
        col = c("#D81B60", "#1E88E5"), lty = 1, lwd = 2)
 ```

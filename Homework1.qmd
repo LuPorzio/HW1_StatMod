@@ -1,0 +1,365 @@
+---
+title: "Homework1"
+date: "25 Marzo 2025"
+author: "Paolo Fabbri - ID: 257552"
+format:
+  pdf:
+    latex_engine: xelatex
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  warning=FALSE,
+  message=FALSE,
+  tidy.opts=list(width.cutoff = 80),
+  tidy = TRUE
+)
+```
+
+# 1. Introduction
+
+In questa analisi, esaminiamo l'effetto di diverse variabili cliniche e demografiche sul rischio di sviluppare la malattia coronarica (CHD) entro un periodo di dieci anni. Per raggiungere questo obiettivo, utilizziamo due approcci statistici distinti: la regressione logistica, che consente di stimare la probabilità di sviluppare CHD in funzione delle variabili predittive, e il classificatore k-NN, che basa le sue previsioni sulla similarità tra osservazioni. Attraverso il confronto delle prestazioni dei due modelli, valutiamo la loro capacità discriminativa e l'affidabilità delle stime, discutendo i limiti e le implicazioni dei risultati nel contesto epidemiologico.
+
+## 1.1 Data Exploration
+
+```{r}
+library(caret)
+library(class)
+library(ggplot2)
+CHD <- read.csv("chd.csv", header = TRUE, sep = ",")
+
+head(CHD)
+summary(CHD)
+str(CHD)
+
+#The output shows that some variables have missing values (NA):
+#- Education
+#- Cpd
+#- Chol
+#- BMI
+#- HR
+colMeans(is.na(CHD[, c("education","cpd", "chol", "BMI", "HR")])) * 100 
+#The percentage of missing values for these variables is very low, none of them exceeds 5%, so we can safely remove them
+
+#Factorizing categorical variables
+CHD$sex <- factor(CHD$sex, labels = c("Female", "Male"))
+CHD$CHD <- factor(CHD$CHD, labels = c("No", "Yes"))
+CHD$education <- factor(CHD$education, labels = c("Low", "Medium-Low", "Medium-High", "High"))
+CHD$smoker <- factor(CHD$smoker, labels = c("No", "Yes"))
+CHD$stroke <- factor(CHD$stroke, labels = c("No", "Yes"))
+CHD$HTN <- factor(CHD$HTN, labels = c("No", "Yes"))
+CHD$diabetes <- factor(CHD$diabetes, labels = c("No", "Yes"))
+
+#Removing rows with NA values from the dataset
+CHD <- na.omit(CHD)
+summary(CHD)
+
+```
+
+## 1.2 Discriminative power of the predictors
+
+```{r}
+table(CHD$CHD) 
+prop.table(table(CHD$CHD))
+
+#Visualization of the discriminative power for continuous variables
+boxplot(age ~ CHD, data = CHD, main = "Age for CHD status", col = c("steelblue", "firebrick")) # Age seems to have a good discriminative effect on CHD status
+boxplot(cpd ~ CHD, data = CHD, main = "Cigarettes per day for CHD status", col = c("steelblue", "firebrick"))
+boxplot(chol ~ CHD, data = CHD, main = "Cholesterol levels for CHD status", col = c("steelblue", "firebrick"))
+boxplot(DBP ~ CHD, data = CHD, main = "Diastolic blood pressure for CHD status", col = c("steelblue", "firebrick"))
+boxplot(BMI ~ CHD, data = CHD, main = "Body mass index for CHD status", col = c("steelblue", "firebrick"))
+boxplot(HR ~ CHD, data = CHD, main = "Heart rate for CHD status", col = c("steelblue", "firebrick"))
+
+#Visualization of the discriminative power for categorical variables
+table(CHD$sex, CHD$CHD)
+
+ggplot(CHD, aes(x = sex, fill = CHD)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Distribuzione di CHD per Sesso",
+       x = "Sesso", y = "Conteggio", fill = "CHD") +
+  scale_fill_manual(values = c("steelblue", "firebrick")) +
+  theme_minimal(base_size = 14)
+#Men seem to have a higher number of CHD cases compared to women, despite there being fewer men in the dataset. This could indicate a higher risk for males
+
+
+table(CHD$education, CHD$CHD) 
+
+ggplot(CHD, aes(x = education, fill = CHD)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Distribuzione di CHD per Livello di Istruzione",
+       x = "Livello di Istruzione", y = "Conteggio", fill = "CHD") +
+  scale_fill_manual(values = c("steelblue", "firebrick")) +
+  theme_minimal(base_size = 14)
+#People with the lowest education level have the highest number of CHD cases, suggesting that education level could be a protective factor
+
+
+table(CHD$smoker, CHD$CHD)
+
+ggplot(CHD, aes(x = smoker, fill = CHD)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Distribuzione di CHD per Fumo",
+       x = "Fumatore", y = "Conteggio", fill = "CHD") +
+  scale_fill_manual(values = c("steelblue", "firebrick")) +
+  theme_minimal(base_size = 14)
+#The number of CHD cases between smokers and non-smokers (311) is very similar. Smoking does not appear to be a strong predictor, as there are no significant differences between the two groups
+
+table(CHD$stroke, CHD$CHD)
+
+ggplot(CHD, aes(x = stroke, fill = CHD)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Distribuzione di CHD per Presenza di Ictus",
+       x = "Ictus Precedente", y = "Conteggio", fill = "CHD") +
+  scale_fill_manual(values = c("steelblue", "firebrick")) +
+  theme_minimal(base_size = 14)
+#Patients with a history of stroke (11 out of 25) show a high likelihood of developing CHD, but the small sample size warrants caution in interpretation
+
+table(CHD$HTN, CHD$CHD) 
+
+ggplot(CHD, aes(x = HTN, fill = CHD)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Distribuzione di CHD per Ipertensione",
+       x = "Ipertensione", y = "Conteggio", fill = "CHD") +
+  scale_fill_manual(values = c("steelblue", "firebrick")) +
+  theme_minimal(base_size = 14)
+#Among individuals with hypertension, 325 out of 1316 developed CHD, compared to 319 out of 2922 without hypertension. This suggests hypertension may be a strong risk factor, with good discriminative ability
+
+table(CHD$diabetes, CHD$CHD)
+
+ggplot(CHD, aes(x = diabetes, fill = CHD)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+            position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Distribuzione di CHD per Diabete",
+       x = "Diabete", y = "Conteggio", fill = "CHD") +
+  scale_fill_manual(values = c("steelblue", "firebrick")) +
+  theme_minimal(base_size = 14)
+#Although the number of diabetic patients is small (109), the proportion of CHD among diabetics (40 out of 109 ≈ 36.7%) is much higher than non-diabetics (604 out of 4129 ≈ 14.6%), suggesting diabetes may be a significant risk factor with strong discriminative ability
+
+```
+
+# 2. Models
+
+## 2.1 Logistic Regression Model
+
+```{r}
+#Set seed for reproducibility
+set.seed(123)
+
+#Split data while maintaining the same CHD proportion
+trainIndex <- createDataPartition(CHD$CHD, p = 0.8, list = FALSE)
+
+#Create training set (80% of the data)
+trainData <- CHD[trainIndex, ]
+
+#Create test set (20% of the data)
+testData <- CHD[-trainIndex, ]
+#Perform logistic regression on the training data to predict CHD and calculate test error
+fit <- glm(CHD ~ ., data = trainData, family = "binomial")
+summary(fit)
+#Interpretation of results:
+#Being male increases the risk of CHD (positive coefficient)
+#Age has a positive effect on the probability of CHD (older individuals have higher risk)
+#Cigarette consumption increases the risk of CHD
+#Hypertension increases the risk of CHD
+#Diabetes strongly increases the likelihood of CHD
+#Diastolic blood pressure (DBP) increases the risk of CHD
+
+#Make predictions on the test data
+lr.preds <- predict(fit, testData, type = "response")
+#Set threshold for classification at 0.5
+cl.preds <- ifelse(lr.preds >= 0.5, "Yes", "No")
+
+#Confusion matrix
+confusionMatrix(factor(cl.preds), testData$CHD)
+#Model correctly classifies 85% of the cases
+#Sensitivity (True Negative Rate - TNR): 99.56% → The model is very good at identifying patients without CHD
+#Specificity (True Positive Rate - TPR): 3.31% → The model performs poorly in detecting patients with CHD
+
+#Test error
+mean(cl.preds != testData$CHD)
+#The model has high specificity (good at detecting non-CHD patients), but is nearly useless in identifying patients with CHD
+```
+
+# 2.2 K-NN Model
+
+```{r}
+#Set seed for reproducibility
+set.seed(123)
+trainDataKnn <- trainData
+testDataKnn <- testData
+
+#Transform categorical variables into numeric variables for KNN training data
+trainDataKnn$sex <- as.numeric(trainDataKnn$sex)
+trainDataKnn$education <- as.numeric(trainDataKnn$education)
+trainDataKnn$smoker <- as.numeric(trainDataKnn$smoker)
+trainDataKnn$stroke <- as.numeric(trainDataKnn$stroke)
+trainDataKnn$HTN <- as.numeric(trainDataKnn$HTN)
+trainDataKnn$diabetes <- as.numeric(trainDataKnn$diabetes)
+
+#Transform categorical variables into numeric variables for KNN test data
+testDataKnn$sex <- as.numeric(testDataKnn$sex)
+testDataKnn$education <- as.numeric(testDataKnn$education)
+testDataKnn$smoker <- as.numeric(testDataKnn$smoker)
+testDataKnn$stroke <- as.numeric(testDataKnn$stroke)
+testDataKnn$HTN <- as.numeric(testDataKnn$HTN)
+testDataKnn$diabetes <- as.numeric(testDataKnn$diabetes)
+
+
+#Arrays to store errors and accuracies for each k value
+errors <- numeric()
+accuracies <- numeric()
+
+#Range of k values to try
+for (k in 1:30) {
+  #Perform KNN predictions with the current k value
+  knn.pred <- knn(trainDataKnn[, -13], testDataKnn[, -13], trainDataKnn[, 13], k = k)
+  
+  #Calculate classification error
+  error_rate <- mean(knn.pred != testDataKnn$CHD)
+  
+  #Calculate accuracy
+  accuracy <- 1 - error_rate
+  
+  #Store error and accuracy in arrays
+  errors[k] <- error_rate
+  accuracies[k] <- accuracy
+}
+
+#Find the k value with the lowest error rate
+best_k <- which.min(errors)
+best_k
+knn.pred <- knn(trainDataKnn[, -13], testDataKnn[, -13], trainDataKnn[, 13], k = best_k)
+
+#Confusion matrix
+confusionMatrix(knn.pred, testDataKnn$CHD)
+#Interpretation:
+#Accuracy: 0.8501, the model correctly predicts 85% of the cases
+#Sensitivity: The model perfectly identifies patients with CHD
+#Specificity: The model fails to recognize patients without CHD
+
+# Despite the high accuracy (85%), the model is highly imbalanced. The low specificity indicates that the model has a high false negative rate for patients without CHD, which is a significant issue
+
+
+#Plot error rate vs. k
+par(mfrow = c(1, 2))
+plot(1:30, errors, type = "b", col = "red", pch = 19,
+     xlab = "Valore di k", ylab = "Errore rate", main = "Errore Rate vs k nel KNN")
+
+#Plot accuracy vs. k
+plot(1:30, accuracies, type = "b", col = "blue", pch = 19,
+     xlab = "Valore di k", ylab = "Accuracy", main = "Accuracy vs k nel KNN")
+```
+
+# 3. Conclusion
+
+La scelta tra il modello **KNN** (K-Nearest Neighbors) e la **regressione logistica** dipende da vari fattori, tra cui le caratteristiche dei tuoi dati, la performance desiderata e la complessità del modello. Ecco una panoramica di entrambi i modelli per aiutarti a decidere:
+
+### 1️⃣ **Regressione Logistica:**
+
+#### **Vantaggi:**
+
+-   
+
+-   **Interpretabilità:** I coefficienti della regressione logistica possono essere interpretati in termini di probabilità e odds, il che aiuta a comprendere l'effetto delle variabili indipendenti sul risultato.
+
+-   
+
+-   **Semplicità:** È un modello relativamente semplice, facile da implementare e da capire.
+
+-   
+
+-   **Gestisce bene le variabili binarie:** Se stai cercando di prevedere un esito binario come nel caso del **CHD** (presenza o assenza), la regressione logistica è spesso un buon punto di partenza.
+
+-   
+
+-   **Probabilità:** La regressione logistica fornisce una stima delle probabilità di appartenere alla classe "Yes", il che può essere utile in applicazioni dove si vuole interpretare il rischio.
+
+-   
+
+#### **Svantaggi:**
+
+-   
+
+-   **Assunzione di linearità:** La regressione logistica assume una relazione lineare tra le variabili indipendenti e la log-odds della variabile dipendente. Se i dati non seguono questa assunzione, il modello potrebbe non performare al meglio.
+
+-   
+
+-   **Problemi con il bilanciamento delle classi:** Se le classi sono molto sbilanciate (ad esempio, più pazienti senza CHD rispetto a quelli con CHD), la regressione logistica può soffrire in termini di accuratezza e performance.
+
+-   
+
+### 2️⃣ **KNN (K-Nearest Neighbors):**
+
+#### **Vantaggi:**
+
+-   
+
+-   **Non richiede assunzioni sulla forma dei dati:** KNN è un modello **non parametrico**, quindi non richiede che i dati siano distribuiti in un certo modo (ad esempio, non assume linearità).
+
+-   
+
+-   **Adatto per problemi complessi e non lineari:** KNN può essere molto utile se la relazione tra le variabili indipendenti e la variabile dipendente è complessa e non lineare.
+
+-   
+
+-   **Semplicità di implementazione:** Come la regressione logistica, KNN è relativamente semplice da implementare, anche se la scelta del parametro k e la normalizzazione dei dati possono essere cruciali per il suo successo.
+
+-   
+
+#### **Svantaggi:**
+
+-   
+
+-   **Non interpretabilità:** KNN non fornisce una spiegazione esplicita del modello, quindi non è facile capire come le variabili influenzino il risultato. Non avrai coefficienti come nella regressione logistica.
+
+-   
+
+-   **Performance computazionale:** KNN può essere lento nei modelli con molti dati, poiché deve calcolare le distanze tra i punti ogni volta che fa una previsione.
+
+-   
+
+-   **Dipendenza dalla scelta di k:** La scelta di k è cruciale e può influenzare significativamente la performance del modello. Inoltre, il modello può essere influenzato da valori di k troppo piccoli o troppo grandi.
+
+-   
+
+### 3️⃣ **Combinazione di entrambi:**
+
+Potresti anche considerare di **combinare** i due modelli, utilizzando la **regressione logistica** come punto di partenza per interpretare le variabili e quindi usare **KNN** come un possibile modello complementare quando la relazione tra le variabili non è lineare.
+
+### **Quale modello scegliere?**
+
+Sulla base dei tuoi risultati:
+
+-   
+
+-   **Regressione Logistica**: Ha mostrato una buona performance, ma i risultati di sensibilità e specificità potrebbero indicare che il modello sta soffrendo di **sbilanciamento delle classi**, dove ci sono più "No" rispetto a "Yes". La regressione logistica ti offre anche l'opportunità di interpretare l'effetto delle variabili sulle probabilità di sviluppare CHD.
+
+-   
+
+-   **KNN**: Ha mostrato una **alta accuracy (85%)**, ma con una **specificità pari a zero**, il che significa che non ha mai predetto correttamente "Yes" (chi ha il CHD). Questo potrebbe essere un forte svantaggio in un contesto sanitario, dove è cruciale non perdere casi positivi. La performance del modello potrebbe migliorare con la regolazione dei parametri (come il valore di k) o un bilanciamento delle classi.
+
+-   
+
+#### **Conclusione:**
+
+-   
+
+-   **Se l'interpretabilità e la capacità di stimare le probabilità** sono importanti per il tuo caso d'uso, la **regressione logistica** è probabilmente la scelta migliore.
+
+-   
+
+-   **Se la precisione assoluta è l'obiettivo principale**, e sei disposto a esplorare ulteriormente il miglior valore di k o utilizzare tecniche di bilanciamento delle classi, **KNN** potrebbe essere un buon candidato, ma la **bassa specificità** è un punto critico che potrebbe richiedere un aggiustamento o un altro approccio.
+
+-   
+
+Se hai bisogno di migliorare la performance del KNN, potresti considerare **tecniche di bilanciamento delle classi**, come la **sottocampionatura** o la **sovracampionatura** dei dati, per migliorare la capacità del modello di riconoscere i pazienti con CHD
